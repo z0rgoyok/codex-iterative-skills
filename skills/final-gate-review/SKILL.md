@@ -91,6 +91,15 @@ How does this code coexist with legacy?
 Does it introduce a new “special case” that will have to be carried around?  
 Will this be easy to extend and evolve?
 
+For existing endpoints, lists, histories, reports, or integrations, any change to the visible result set is a product and contract question first:
+
+- filtering out records that used to be returned,
+- hiding operations by visibility rule,
+- narrowing by type, status, reference, public marker, or role,
+- changing total/count semantics together with the returned rows.
+
+Do not treat such a change as a purely technical cleanup unless the caller already supplied an explicit decision that this new behavior is desired.
+
 ### Operability
 
 Are logging and metrics sufficient where it matters?  
@@ -121,6 +130,8 @@ For each important point, when possible, specify:
 3. How it could be improved:  
    refactor, split across layers, simplify, extract an object/function, add specific test scenarios, etc.
 
+If a finding depends on a business choice about what users or integrations should see on an existing contract, record it as an open question instead of silently assuming the stricter filter is correct.
+
 If context is missing (a contract is not visible, a related piece of code is not shown), ask targeted questions, but do not turn the review into a long interrogation.
 
 ---
@@ -134,12 +145,15 @@ Before you finalize your answer:
     - a new “special case”,
     - a new implicit dependency,
     - a new way to bypass existing domain rules.
+- Separately check whether the code narrows the externally visible result set on an existing route or report. If yes and no explicit user decision is present, surface that as a product/contract question.
 - Обязательно проведи long impact ревью: оцени blast radius и долгосрочные последствия для соседних use cases / интеграций / миграций / операций (даже если тесты зелёные) и отрази это в финальном результате.
 
 Your review should help decide whether these changes strengthen the system architecture and behavior, or whether they need to be reworked before being merged.
 
 
 This review is a single, end-to-end batch task. Do not pause the review to wait for user/author actions or clarifications and do not ask follow-up questions that require a response in the middle of the process. If something is unclear, state explicit assumptions and proceed with the best possible analysis, recording open questions in the review result instead of asking the user directly.
+
+If a conclusion depends on a business choice, you must not resolve that choice yourself. Put it into `Открытые вопросы` explicitly so the caller can ask the user and avoid silently baking the choice into fixes.
 
 This skill works inside the current Codex workflow. Do not create ad hoc Markdown files in the repository root and do not require `${REVIEW_FILE}` or any other external file path to complete the task.
 
