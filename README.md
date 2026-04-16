@@ -1,11 +1,12 @@
 # Codex Iterative Skills
 
-Этот репозиторий упаковывает два навыка для управляемой работы через итерации ревью.
+Этот репозиторий упаковывает три навыка для управляемой работы через итерации и финальное ревью.
 
 Что здесь лежит:
 
 - `iterative-plan-review` строит рабочий план по задаче, прогоняет его через до трёх независимых проходов критического ревью и поднимает пользователю только бизнес-развилки.
 - `iterative-review-fix` закрывает цикл `review -> fix -> re-review`, сохраняет весь след артефактов, опционально использует `$final-gate-review` внутри review-субагента и поднимает пользователю только решения, которые меняют бизнес-смысл.
+- `final-gate-review` даёт отдельный жёсткий финальный quality gate (контроль качества) для staged change set (подготовленного набора изменений) и ищет long impact (долгий эффект), архитектурные риски и пропущенные сценарии.
 
 Оба навыка сохраняют историю работы и артефакты в файловую структуру, чтобы результат можно было восстановить, проверить и продолжить.
 
@@ -23,6 +24,8 @@ skills/
     agents/openai.yaml
     references/artifact-layout.md
     scripts/init_review_fix_run.py
+  final-gate-review/
+    SKILL.md
 ```
 
 ## Why These Skills Exist
@@ -48,6 +51,7 @@ skills/
 mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
 cp -R skills/iterative-plan-review "${CODEX_HOME:-$HOME/.codex}/skills/"
 cp -R skills/iterative-review-fix "${CODEX_HOME:-$HOME/.codex}/skills/"
+cp -R skills/final-gate-review "${CODEX_HOME:-$HOME/.codex}/skills/"
 ```
 
 ## Usage
@@ -56,6 +60,7 @@ cp -R skills/iterative-review-fix "${CODEX_HOME:-$HOME/.codex}/skills/"
 
 - `Use $iterative-plan-review to turn this task into a working plan and review it up to three times.`
 - `Use $iterative-review-fix to close these review findings and keep the full artifact trail.`
+- `Use $final-gate-review to perform a final principal-level review of the staged change set.`
 
 Оба навыка уже включают:
 
@@ -69,3 +74,5 @@ cp -R skills/iterative-review-fix "${CODEX_HOME:-$HOME/.codex}/skills/"
 - использовать `$final-gate-review`, если этот skill доступен в сессии review-субагента;
 - работать без него, если skill не установлен;
 - считать цикл завершённым только при нуле открытых findings любого уровня.
+
+`final-gate-review` полезен отдельно, когда нужен последний независимый архитектурный и продуктовый фильтр перед merge (вливанием).
