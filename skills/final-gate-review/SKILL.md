@@ -139,9 +139,29 @@ Before you finalize your answer:
 Your review should help decide whether these changes strengthen the system architecture and behavior, or whether they need to be reworked before being merged.
 
 
-This review is a single, end-to-end batch task. Do not pause the review to wait for user/author actions or clarifications and do not ask follow-up questions that require a response in the middle of the process. If something is unclear, state explicit assumptions and proceed with the best possible analysis, recording open questions in the review file instead of asking the user directly. Only after you have completed the full review and written all findings into the ${REVIEW_FILE} file should you consider any subsequent dialogue or iterations.
+This review is a single, end-to-end batch task. Do not pause the review to wait for user/author actions or clarifications and do not ask follow-up questions that require a response in the middle of the process. If something is unclear, state explicit assumptions and proceed with the best possible analysis, recording open questions in the review result instead of asking the user directly.
+
+This skill works inside the current Codex workflow. Do not create ad hoc Markdown files in the repository root and do not require `${REVIEW_FILE}` or any other external file path to complete the task.
+
+Return the review directly in the assistant response so the caller can:
+
+- show findings immediately in the UI;
+- persist them into its own artifact workspace if needed;
+- decide whether to start another fix/re-review iteration.
+
+If the caller explicitly asks to save the review into its own artifact file, the caller should do that after receiving your result. The skill itself should stay fileless and integrated.
 
 --
 
-Проведи ревью. Результат в мд файл. {BRANCH_NAME}{DATE_TIME}-review_{NUMBER}.md
-Ревью должно быть записано на русском языке. 
+Проведи ревью.
+
+Результат верни прямо в ответе на русском языке.
+
+Структура ответа:
+
+1. `Итог`
+2. `Findings`
+3. `Открытые вопросы`
+4. `Что проверено`
+
+Если findings нет, скажи это явно.
