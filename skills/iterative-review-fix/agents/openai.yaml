@@ -1,0 +1,4 @@
+interface:
+  display_name: "Iterative Review Fix"
+  short_description: "Resolve review findings with re-review"
+  default_prompt: "Use $iterative-review-fix to turn these review findings into fixes, preserve the full artifact trail, and re-review the result up to three times while escalating business decisions to me."

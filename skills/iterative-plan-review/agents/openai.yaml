@@ -1,0 +1,4 @@
+interface:
+  display_name: "Iterative Plan Review"
+  short_description: "Draft and stress-test execution plans"
+  default_prompt: "Use $iterative-plan-review to turn this task into an execution plan, review it in up to three subagent passes, and bring me only the business decisions that need my input."
