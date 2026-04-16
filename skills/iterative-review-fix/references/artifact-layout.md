@@ -15,6 +15,7 @@ Directory layout:
   task.md
   review-findings.md
   scope-and-constraints.md
+  review-scope.md
   project-context.md
 01-analysis/
   findings-analysis.md
@@ -30,6 +31,7 @@ Directory layout:
   change-log.md
 04-reviews/
   iteration-1/
+    review-basis.md
     findings-in-scope.md
     fixes-applied.md
     verification.md
@@ -53,6 +55,7 @@ File intent:
 - `task.md` keeps the original user request unchanged.
 - `review-findings.md` keeps the raw review comments or findings.
 - `scope-and-constraints.md` keeps confirmed limits, priorities, and exclusions.
+- `review-scope.md` records the entry mode, base branch, worktree status, and why the first pass uses this review basis.
 - `project-context.md` keeps local rules, architecture, and surrounding code context.
 - `findings-analysis.md` records which findings are confirmed, partial, stale, or rejected.
 - `fix-strategy.md` records the chosen order of fixes and the reasoning behind it.
@@ -63,6 +66,7 @@ File intent:
 - `conversation-log.md` keeps the timeline of questions and answers.
 - `decision-log.md` keeps only decisions explicitly confirmed by the user.
 - `change-log.md` explains why the fix direction changed between iterations.
+- `review-basis.md` records whether the pass is an initial diff review or a re-review after fixes.
 - `findings-in-scope.md` records which findings were addressed in the current pass.
 - `fixes-applied.md` records the actual changes introduced in the current pass.
 - `verification.md` records inspections, quality checks, and tests for the current pass.

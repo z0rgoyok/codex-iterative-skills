@@ -13,6 +13,7 @@ from pathlib import Path
 
 
 DEFAULT_ARTIFACT_ROOT = ".codex-artifacts/iterative-review-fix"
+ENTRY_MODE_CHOICES = ("auto", "initial-diff-review", "findings-fix-cycle")
 
 
 @dataclass(frozen=True)
@@ -64,7 +65,13 @@ def write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def create_initial_files(layout: RunLayout, task: str, created_at: datetime) -> None:
+def create_initial_files(
+    layout: RunLayout,
+    task: str,
+    created_at: datetime,
+    base_branch: str | None,
+    entry_mode: str,
+) -> None:
     """Create the baseline artifact files for a new run."""
 
     for directory in (
@@ -80,6 +87,17 @@ def create_initial_files(layout: RunLayout, task: str, created_at: datetime) -> 
     write_text(layout.input_dir / "task.md", f"# Task\n\n{task.strip()}\n")
     write_text(layout.input_dir / "review-findings.md", "# Review Findings\n\n- Paste raw review findings here.\n")
     write_text(layout.input_dir / "scope-and-constraints.md", "# Scope and Constraints\n\n- Record confirmed boundaries here.\n")
+    write_text(
+        layout.input_dir / "review-scope.md",
+        (
+            "# Review Scope\n\n"
+            f"- Requested entry mode: `{entry_mode}`\n"
+            f"- Base branch: `{base_branch or 'not-set'}`\n"
+            "- Worktree status: record clean or dirty state here.\n"
+            "- First review basis: record whether pass 1 is `initial-diff-review` or `re-review-after-fixes`.\n"
+            "- Notes: record how the review surface was chosen.\n"
+        ),
+    )
     write_text(layout.input_dir / "project-context.md", "# Project Context\n\n- Record relevant local rules and code context here.\n")
 
     write_text(layout.analysis_dir / "findings-analysis.md", "# Findings Analysis\n\n- Record which findings are confirmed and why.\n")
@@ -112,6 +130,7 @@ def create_initial_files(layout: RunLayout, task: str, created_at: datetime) -> 
                 "questions for the user, answers received, and exit decision for this pass.\n"
             ),
         )
+        write_text(iteration_dir / "review-basis.md", f"# Review Basis {iteration}\n\n")
         write_text(iteration_dir / "findings-in-scope.md", f"# Findings In Scope {iteration}\n\n")
         write_text(iteration_dir / "fixes-applied.md", f"# Fixes Applied {iteration}\n\n")
         write_text(iteration_dir / "verification.md", f"# Verification {iteration}\n\n")
@@ -127,7 +146,14 @@ def create_initial_files(layout: RunLayout, task: str, created_at: datetime) -> 
     write_text(layout.final_dir / "verification-summary.md", "# Verification Summary\n\n- Summarize quality checks and remaining risk.\n")
 
 
-def write_manifest(layout: RunLayout, task: str, created_at: datetime, workspace_root: Path) -> None:
+def write_manifest(
+    layout: RunLayout,
+    task: str,
+    created_at: datetime,
+    workspace_root: Path,
+    base_branch: str | None,
+    entry_mode: str,
+) -> None:
     """Persist machine-readable metadata for the run."""
 
     manifest = {
@@ -135,6 +161,8 @@ def write_manifest(layout: RunLayout, task: str, created_at: datetime, workspace
         "workspace_root": str(workspace_root),
         "run_dir": str(layout.run_dir),
         "task": task.strip(),
+        "entry_mode_requested": entry_mode,
+        "base_branch": base_branch,
         "paths": {
             "input": str(layout.input_dir),
             "analysis": str(layout.analysis_dir),
@@ -154,6 +182,13 @@ def main() -> None:
     parser.add_argument("--workspace-root", required=True, help="Root directory for project-local artifacts.")
     parser.add_argument("--task", required=True, help="Raw task text from the user.")
     parser.add_argument("--slug", help="Optional filesystem slug for the run directory.")
+    parser.add_argument("--base-branch", help="Optional base branch for initial diff review mode.")
+    parser.add_argument(
+        "--entry-mode",
+        choices=ENTRY_MODE_CHOICES,
+        default="auto",
+        help="How the run should enter the workflow.",
+    )
     args = parser.parse_args()
 
     workspace_root = Path(args.workspace_root).expanduser().resolve()
@@ -161,8 +196,21 @@ def main() -> None:
     task_slug = slugify(args.slug or args.task)
     layout = build_layout(workspace_root=workspace_root, task_slug=task_slug, created_at=created_at)
 
-    create_initial_files(layout=layout, task=args.task, created_at=created_at)
-    write_manifest(layout=layout, task=args.task, created_at=created_at, workspace_root=workspace_root)
+    create_initial_files(
+        layout=layout,
+        task=args.task,
+        created_at=created_at,
+        base_branch=args.base_branch,
+        entry_mode=args.entry_mode,
+    )
+    write_manifest(
+        layout=layout,
+        task=args.task,
+        created_at=created_at,
+        workspace_root=workspace_root,
+        base_branch=args.base_branch,
+        entry_mode=args.entry_mode,
+    )
 
     print(layout.run_dir)
 
