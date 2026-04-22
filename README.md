@@ -58,6 +58,28 @@ cp -R skills/iterative-review-fix "${CODEX_HOME:-$HOME/.codex}/skills/"
 cp -R skills/final-gate-review "${CODEX_HOME:-$HOME/.codex}/skills/"
 ```
 
+Для воспроизводимой синхронизации используй проектный скрипт:
+
+```bash
+scripts/sync-skills.sh install codex
+scripts/sync-skills.sh install claude
+scripts/sync-skills.sh install all
+```
+
+Он умеет три режима:
+
+- `install` копирует навыки из репозитория в домашний каталог агента;
+- `pull` копирует навыки из домашнего каталога агента обратно в репозиторий;
+- `diff` показывает расхождения между репозиторием и установленной копией.
+
+Примеры:
+
+```bash
+scripts/sync-skills.sh diff all
+scripts/sync-skills.sh pull codex claude-review-manager
+scripts/sync-skills.sh install all iterative-plan-review iterative-review-fix
+```
+
 ## Usage
 
 Примеры запросов:

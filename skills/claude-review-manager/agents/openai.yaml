@@ -1,0 +1,4 @@
+interface:
+  display_name: "Claude Review Manager"
+  short_description: "Управлять Claude для сильного ревью"
+  default_prompt: "Use $claude-review-manager to run Claude as an independent reviewer for this task."
