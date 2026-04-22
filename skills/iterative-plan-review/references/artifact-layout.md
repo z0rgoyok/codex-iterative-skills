@@ -1,6 +1,6 @@
 # Artifact Layout
 
-Use one persistent workspace per planning run.
+Use one persistent workspace per plan-review run.
 
 Default root inside the current work root:
 
@@ -11,56 +11,148 @@ Default root inside the current work root:
 Directory layout:
 
 ```text
-00-input/
-  task.md
-  constraints.md
-  project-context.md
-01-working/
-  plan-v1.md
-  plan-current.md
-02-history/
-  conversation-log.md
-  business-decisions.md
-  change-log.md
-03-reviews/
-  iteration-1/
-    plan-before.md
-    subagent-prompt.md
-    subagent-feedback.md
-    questions-for-user.md
-    user-answers.md
-    plan-after.md
-  iteration-2/
-  iteration-3/
-04-final/
-  final-plan.md
-  final-summary.md
-  open-questions.md
 manifest.json
+session-state.json
+event-log.jsonl
+reviews/
+  iteration-1.json
+  iteration-2.json
+  iteration-3.json
 ```
 
-File intent:
+## What each file is for
 
-- `task.md` keeps the original user request unchanged.
-- `constraints.md` keeps confirmed limitations and boundaries.
-- `project-context.md` keeps local rules and relevant repository context.
-- `plan-v1.md` keeps the first meaningful draft.
-- `plan-current.md` is the SSOT for the latest working plan.
-- `conversation-log.md` keeps the timeline of user and agent exchanges.
-- `business-decisions.md` keeps only decisions confirmed by the user.
-- `change-log.md` explains why the plan changed after each review pass.
-- `subagent-prompt.md` preserves what the reviewer actually saw.
-- `subagent-feedback.md` preserves the review comments from the subagent.
-- `questions-for-user.md` keeps only business questions that require user choice.
-- `user-answers.md` preserves the user's answers without reinterpretation.
-- `plan-before.md` and `plan-after.md` preserve the delta around each pass.
-- `final-plan.md` is the final delivery artifact.
-- `final-summary.md` explains the business meaning of the final plan.
-- `open-questions.md` keeps unresolved items that still affect execution.
-- `manifest.json` gives machine-readable metadata for the run.
+- `manifest.json` keeps immutable metadata about the run:
+  - schema version;
+  - created at;
+  - workspace root;
+  - run dir;
+  - artifact paths.
 
-Usage rule:
+- `session-state.json` is the mutable SSOT:
+  - input task, constraints, context, and assumptions;
+  - current plan markdown;
+  - plan goal, dependencies, risks, and verification points;
+  - confirmed business decisions;
+  - open questions;
+  - final plan and summary.
 
-- Keep history append-only.
-- Replace `plan-current.md` when the plan changes.
-- Do not rewrite historical iteration files after a later pass changes the plan.
+- `event-log.jsonl` is append-only history:
+  - run created;
+  - review pass persisted;
+  - user answers incorporated;
+  - final status recorded.
+
+- `reviews/iteration-N.json` stores one full review pass:
+  - basis and plan-before snapshot;
+  - prompt summary and raw subagent response;
+  - normalized critical gaps, improvement suggestions, business questions, revised plan, quality signals;
+  - user answers related to the pass;
+  - plan-after snapshot;
+  - change summary and exit decision.
+
+## Design intent
+
+This layout solves two operating problems:
+
+1. The agent keeps one clear mutable source of truth instead of many loosely coordinated Markdown files.
+2. Automation can validate that each review pass was actually persisted and whether business decisions were resolved.
+
+## Required checkpoint
+
+After `wait_agent` returns, the caller must persist the current pass into `reviews/iteration-N.json` before any new plan edits, extra questioning, or another review pass.
+
+If this checkpoint is missing, the run is incomplete even when the UI already shows the subagent response.
+
+The same `reviews/iteration-N.json` file may be updated while the pass is still in progress. The important rule is that one pass stays in one JSON document instead of being split across many files.
+
+## Suggested JSON shapes
+
+### `manifest.json`
+
+```json
+{
+  "schema_version": 3,
+  "created_at": "2026-04-18T13:00:00+03:00",
+  "workspace_root": "/abs/path",
+  "run_dir": "/abs/path/.codex-artifacts/iterative-plan-review/sessions/20260418-130000-task",
+  "paths": {
+    "session_state": "/abs/path/.../session-state.json",
+    "event_log": "/abs/path/.../event-log.jsonl",
+    "reviews_dir": "/abs/path/.../reviews"
+  }
+}
+```
+
+### `session-state.json`
+
+```json
+{
+  "schema_version": 3,
+  "metadata": {},
+  "input": {},
+  "plan_analysis": {},
+  "working_state": {},
+  "confirmed_business_decisions": [],
+  "open_questions": [],
+  "final_result": {}
+}
+```
+
+### `reviews/iteration-N.json`
+
+```json
+{
+  "schema_version": 3,
+  "iteration": 1,
+  "stage": "pass_completed",
+  "basis": {
+    "task_summary": "",
+    "confirmed_context": [],
+    "confirmed_constraints": [],
+    "confirmed_business_decisions": [],
+    "open_questions_at_start": []
+  },
+  "plan_before": "",
+  "subagent": {
+    "reviewer_role": "plan-critic",
+    "reviewer_model": "gpt-5.4",
+    "prompt_summary": "",
+    "raw_response": ""
+  },
+  "normalized_review": {
+    "overall_summary": "",
+    "critical_gaps": [],
+    "improvement_suggestions": [],
+    "questions_for_user": [],
+    "revised_plan_markdown": "",
+    "plan_quality_signals": []
+  },
+  "user_answers": [],
+  "plan_after": "",
+  "change_summary": [],
+  "exit_decision": {
+    "decision": "continue",
+    "reason": ""
+  },
+  "persisted_at": "2026-04-18T13:10:00+03:00"
+}
+```
+
+### `event-log.jsonl`
+
+One JSON object per line:
+
+```json
+{"timestamp":"2026-04-18T13:00:00+03:00","type":"run-created","details":{"schema_version":3}}
+{"timestamp":"2026-04-18T13:10:00+03:00","type":"review-pass-persisted","details":{"iteration":1,"stage":"review_received","decision":"ask-user"}}
+{"timestamp":"2026-04-18T13:18:00+03:00","type":"run-finalized","details":{"iteration":1,"status":"completed"}}
+```
+
+## Usage rules
+
+- Keep `event-log.jsonl` append-only.
+- Replace `session-state.json` when the current plan state changes.
+- Replace `reviews/iteration-N.json` while the pass is in progress, then freeze it once the exit decision is recorded.
+- Do not spread one review pass across multiple files.
+- Persist each pass through `scripts/persist_plan_review_pass.py`, so the raw subagent response and normalized JSON summary are written consistently.

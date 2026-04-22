@@ -5,10 +5,10 @@
 Что здесь лежит:
 
 - `iterative-plan-review` строит рабочий план по задаче, прогоняет его через до трёх независимых проходов критического ревью и поднимает пользователю только бизнес-развилки.
-- `iterative-review-fix` закрывает цикл `review -> fix -> re-review`, сохраняет весь след артефактов, опционально использует `$final-gate-review` внутри review-субагента и поднимает пользователю только решения, которые меняют бизнес-смысл.
+- `iterative-review-fix` закрывает цикл `review -> fix -> re-review`, сохраняет компактный машинно-парсерный след артефактов, опционально использует `$final-gate-review` внутри review-субагента и поднимает пользователю только решения, которые меняют бизнес-смысл.
 - `final-gate-review` даёт отдельный жёсткий финальный quality gate (контроль качества) для staged change set (подготовленного набора изменений), ищет long impact (долгий эффект), архитектурные риски и пропущенные сценарии и возвращает результат прямо в ответе без отдельного файла в репозитории.
 
-Оба навыка сохраняют историю работы и артефакты в файловую структуру, чтобы результат можно было восстановить, проверить и продолжить.
+Оба навыка сохраняют историю работы и артефакты так, чтобы результат можно было восстановить, проверить и продолжить. Для `iterative-plan-review` и `iterative-review-fix` рабочий след теперь хранится в JSON-first формате.
 
 ## Repository Layout
 
@@ -19,11 +19,13 @@ skills/
     agents/openai.yaml
     references/artifact-layout.md
     scripts/init_plan_review_run.py
+    scripts/persist_plan_review_pass.py
   iterative-review-fix/
     SKILL.md
     agents/openai.yaml
     references/artifact-layout.md
     scripts/init_review_fix_run.py
+    scripts/persist_review_pass.py
   final-gate-review/
     SKILL.md
 ```
@@ -38,6 +40,8 @@ skills/
 - добавляют независимое критическое ревью;
 - сохраняют историю вопросов, ответов и изменений;
 - останавливают цикл раньше третьей итерации, когда открытых findings уже нет вообще.
+
+Оба итеративных навыка дополнительно решают операционную проблему "субагент ответил, но артефакты не были сохранены" через обязательный checkpoint persistence (контрольный шаг сохранения) после `wait_agent`.
 
 ## Installation
 
@@ -69,10 +73,22 @@ cp -R skills/final-gate-review "${CODEX_HOME:-$HOME/.codex}/skills/"
 - prompt contract (контракт промпта) для субагента;
 - явный запрет на каскадную делегацию из субагента.
 
+`iterative-plan-review` дополнительно умеет:
+
+- хранить `session-state.json` как SSOT (единый источник истины) прогона;
+- хранить `event-log.jsonl` как append-only журнал;
+- хранить каждый review pass в одном `reviews/iteration-N.json`;
+- фиксировать raw response (сырой ответ) reviewer-а и normalized review (нормализованное ревью) через `scripts/persist_plan_review_pass.py`;
+- обновлять тот же pass после ответов пользователя и финализации без россыпи вспомогательных Markdown-файлов.
+
 `iterative-review-fix` дополнительно умеет:
 
 - использовать `$final-gate-review`, если этот skill доступен в сессии review-субагента;
 - работать без него, если skill не установлен;
-- считать цикл завершённым только при нуле открытых findings любого уровня.
+- считать цикл завершённым только при нуле открытых findings любого уровня;
+- хранить `session-state.json` как SSOT (единый источник истины) прогона;
+- хранить `event-log.jsonl` как append-only журнал;
+- хранить каждый review pass в одном `reviews/iteration-N.json`;
+- фиксировать raw response (сырой ответ) reviewer-а и normalized review (нормализованное ревью) через `scripts/persist_review_pass.py`.
 
 `final-gate-review` полезен отдельно, когда нужен последний независимый архитектурный и продуктовый фильтр перед merge (вливанием). Он работает во встроенном режиме: показывает findings сразу в ответе, а сохранение в артефакты оставляет вызывающему workflow.

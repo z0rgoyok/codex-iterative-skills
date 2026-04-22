@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a persistent artifact workspace for iterative plan review runs."""
+"""Create a compact JSON-first artifact workspace for iterative plan review runs."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from pathlib import Path
 
 
 DEFAULT_ARTIFACT_ROOT = ".codex-artifacts/iterative-plan-review"
+SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -20,11 +21,10 @@ class RunLayout:
     """Describe the directory layout for one plan review run."""
 
     run_dir: Path
-    input_dir: Path
-    working_dir: Path
-    history_dir: Path
     reviews_dir: Path
-    final_dir: Path
+    manifest_path: Path
+    session_state_path: Path
+    event_log_path: Path
 
 
 def slugify(value: str) -> str:
@@ -45,13 +45,13 @@ def build_layout(workspace_root: Path, task_slug: str, created_at: datetime) -> 
 
     run_name = f"{created_at:%Y%m%d-%H%M%S}-{task_slug}"
     run_dir = workspace_root / DEFAULT_ARTIFACT_ROOT / "sessions" / run_name
+    reviews_dir = run_dir / "reviews"
     return RunLayout(
         run_dir=run_dir,
-        input_dir=run_dir / "00-input",
-        working_dir=run_dir / "01-working",
-        history_dir=run_dir / "02-history",
-        reviews_dir=run_dir / "03-reviews",
-        final_dir=run_dir / "04-final",
+        reviews_dir=reviews_dir,
+        manifest_path=run_dir / "manifest.json",
+        session_state_path=run_dir / "session-state.json",
+        event_log_path=run_dir / "event-log.jsonl",
     )
 
 
@@ -62,79 +62,175 @@ def write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def create_initial_files(layout: RunLayout, task: str, created_at: datetime) -> None:
+def write_json(path: Path, payload: object) -> None:
+    """Persist a JSON document with stable formatting."""
+
+    write_text(path, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+
+
+def append_jsonl(path: Path, payload: object) -> None:
+    """Append one JSON object to a JSONL log."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def build_session_state(
+    task: str,
+    created_at: datetime,
+    workspace_root: Path,
+    run_dir: Path,
+) -> dict[str, object]:
+    """Build the initial mutable session state."""
+
+    timestamp = created_at.isoformat(timespec="seconds")
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "metadata": {
+            "created_at": timestamp,
+            "workspace_root": str(workspace_root),
+            "run_dir": str(run_dir),
+            "current_phase": "initialized",
+            "last_updated_at": timestamp,
+        },
+        "input": {
+            "task": task.strip(),
+            "confirmed_context": [],
+            "confirmed_constraints": [],
+            "project_context": [],
+            "assumptions": [],
+        },
+        "plan_analysis": {
+            "goal": "",
+            "expected_outcome": "",
+            "dependencies": [],
+            "risks": [],
+            "verification_points": [],
+        },
+        "working_state": {
+            "current_status": [
+                "Run initialized.",
+                "Plan v1 not recorded yet.",
+                "First review pass not started.",
+            ],
+            "current_plan_markdown": "",
+            "plan_versions": {
+                "v1": "",
+                "current_label": "uninitialized",
+            },
+            "latest_review_pass": None,
+        },
+        "confirmed_business_decisions": [],
+        "open_questions": [],
+        "final_result": {
+            "status": "in_progress",
+            "final_plan_markdown": "",
+            "final_summary": "",
+            "open_questions": [],
+        },
+    }
+
+
+def build_iteration_payload(iteration: int) -> dict[str, object]:
+    """Build the initial JSON skeleton for one review pass."""
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "iteration": iteration,
+        "stage": "initialized",
+        "basis": {
+            "task_summary": "",
+            "confirmed_context": [],
+            "confirmed_constraints": [],
+            "confirmed_business_decisions": [],
+            "open_questions_at_start": [],
+        },
+        "plan_before": "",
+        "subagent": {
+            "reviewer_role": "plan-critic",
+            "reviewer_model": None,
+            "prompt_summary": "",
+            "raw_response": "",
+        },
+        "normalized_review": {
+            "overall_summary": "",
+            "critical_gaps": [],
+            "improvement_suggestions": [],
+            "questions_for_user": [],
+            "revised_plan_markdown": "",
+            "plan_quality_signals": [],
+        },
+        "user_answers": [],
+        "plan_after": "",
+        "change_summary": [],
+        "exit_decision": {
+            "decision": "pending",
+            "reason": "",
+        },
+        "persisted_at": None,
+    }
+
+
+def create_initial_files(
+    layout: RunLayout,
+    task: str,
+    created_at: datetime,
+    workspace_root: Path,
+) -> None:
     """Create the baseline artifact files for a new run."""
 
-    for directory in (
-        layout.input_dir,
-        layout.working_dir,
-        layout.history_dir,
-        layout.reviews_dir,
-        layout.final_dir,
-    ):
-        directory.mkdir(parents=True, exist_ok=True)
+    layout.reviews_dir.mkdir(parents=True, exist_ok=True)
 
-    write_text(layout.input_dir / "task.md", f"# Task\n\n{task.strip()}\n")
-    write_text(layout.input_dir / "constraints.md", "# Constraints\n\n- Add confirmed constraints here.\n")
-    write_text(layout.input_dir / "project-context.md", "# Project Context\n\n- Add relevant local rules and context here.\n")
-
-    write_text(layout.working_dir / "plan-v1.md", "# Plan v1\n\n- Draft the first plan here.\n")
-    write_text(
-        layout.working_dir / "plan-current.md",
-        "# Current Plan\n\n- Keep the latest working version of the plan here.\n",
+    session_state = build_session_state(
+        task=task,
+        created_at=created_at,
+        workspace_root=workspace_root,
+        run_dir=layout.run_dir,
     )
-
-    write_text(
-        layout.history_dir / "conversation-log.md",
-        (
-            "# Conversation Log\n\n"
-            f"- {created_at.isoformat(timespec='seconds')}: Run created.\n"
-            "- Append user questions, agent questions, and user answers chronologically.\n"
-        ),
-    )
-    write_text(layout.history_dir / "business-decisions.md", "# Business Decisions\n\n- Record decisions confirmed by the user.\n")
-    write_text(layout.history_dir / "change-log.md", "# Plan Change Log\n\n- Record why each plan revision changed.\n")
+    write_json(layout.session_state_path, session_state)
 
     for iteration in range(1, 4):
-        iteration_dir = layout.reviews_dir / f"iteration-{iteration}"
-        iteration_dir.mkdir(parents=True, exist_ok=True)
-        write_text(
-            iteration_dir / "README.md",
-            (
-                f"# Iteration {iteration}\n\n"
-                "- Store the prompt sent to the subagent, its commentary, user-facing questions, "
-                "answers received, and the before/after plan snapshots.\n"
-            ),
-        )
-        write_text(iteration_dir / "plan-before.md", f"# Plan Before Iteration {iteration}\n\n")
-        write_text(iteration_dir / "subagent-prompt.md", f"# Subagent Prompt {iteration}\n\n")
-        write_text(iteration_dir / "subagent-feedback.md", f"# Subagent Feedback {iteration}\n\n")
-        write_text(iteration_dir / "questions-for-user.md", f"# Questions for User {iteration}\n\n")
-        write_text(iteration_dir / "user-answers.md", f"# User Answers {iteration}\n\n")
-        write_text(iteration_dir / "plan-after.md", f"# Plan After Iteration {iteration}\n\n")
+        write_json(layout.reviews_dir / f"iteration-{iteration}.json", build_iteration_payload(iteration))
 
-    write_text(layout.final_dir / "final-plan.md", "# Final Plan\n\n- Write the final approved plan here.\n")
-    write_text(layout.final_dir / "final-summary.md", "# Final Summary\n\n- Explain what the plan does and why.\n")
-    write_text(layout.final_dir / "open-questions.md", "# Open Questions\n\n- Record unresolved items that still affect execution.\n")
+    append_jsonl(
+        layout.event_log_path,
+        {
+            "timestamp": created_at.isoformat(timespec="seconds"),
+            "type": "run-created",
+            "details": {
+                "task": task.strip(),
+                "schema_version": SCHEMA_VERSION,
+            },
+        },
+    )
 
 
-def write_manifest(layout: RunLayout, task: str, created_at: datetime, workspace_root: Path) -> None:
+def write_manifest(
+    layout: RunLayout,
+    task: str,
+    created_at: datetime,
+    workspace_root: Path,
+) -> None:
     """Persist machine-readable metadata for the run."""
 
     manifest = {
+        "schema_version": SCHEMA_VERSION,
         "created_at": created_at.isoformat(timespec="seconds"),
         "workspace_root": str(workspace_root),
         "run_dir": str(layout.run_dir),
         "task": task.strip(),
         "paths": {
-            "input": str(layout.input_dir),
-            "working": str(layout.working_dir),
-            "history": str(layout.history_dir),
-            "reviews": str(layout.reviews_dir),
-            "final": str(layout.final_dir),
+            "session_state": str(layout.session_state_path),
+            "event_log": str(layout.event_log_path),
+            "reviews_dir": str(layout.reviews_dir),
+            "reviews": {
+                f"iteration_{iteration}": str(layout.reviews_dir / f"iteration-{iteration}.json")
+                for iteration in range(1, 4)
+            },
         },
     }
-    write_text(layout.run_dir / "manifest.json", json.dumps(manifest, indent=2, ensure_ascii=True) + "\n")
+    write_json(layout.manifest_path, manifest)
 
 
 def main() -> None:
@@ -151,8 +247,18 @@ def main() -> None:
     task_slug = slugify(args.slug or args.task)
     layout = build_layout(workspace_root=workspace_root, task_slug=task_slug, created_at=created_at)
 
-    create_initial_files(layout=layout, task=args.task, created_at=created_at)
-    write_manifest(layout=layout, task=args.task, created_at=created_at, workspace_root=workspace_root)
+    create_initial_files(
+        layout=layout,
+        task=args.task,
+        created_at=created_at,
+        workspace_root=workspace_root,
+    )
+    write_manifest(
+        layout=layout,
+        task=args.task,
+        created_at=created_at,
+        workspace_root=workspace_root,
+    )
 
     print(layout.run_dir)
 

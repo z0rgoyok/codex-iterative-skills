@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a persistent artifact workspace for iterative review-fix runs."""
+"""Create a compact JSON-first artifact workspace for iterative review-fix runs."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from pathlib import Path
 
 DEFAULT_ARTIFACT_ROOT = ".codex-artifacts/iterative-review-fix"
 ENTRY_MODE_CHOICES = ("auto", "initial-diff-review", "findings-fix-cycle")
+SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -21,12 +22,10 @@ class RunLayout:
     """Describe the directory layout for one review-fix run."""
 
     run_dir: Path
-    input_dir: Path
-    analysis_dir: Path
-    working_dir: Path
-    history_dir: Path
     reviews_dir: Path
-    final_dir: Path
+    manifest_path: Path
+    session_state_path: Path
+    event_log_path: Path
 
 
 def slugify(value: str) -> str:
@@ -47,14 +46,13 @@ def build_layout(workspace_root: Path, task_slug: str, created_at: datetime) -> 
 
     run_name = f"{created_at:%Y%m%d-%H%M%S}-{task_slug}"
     run_dir = workspace_root / DEFAULT_ARTIFACT_ROOT / "sessions" / run_name
+    reviews_dir = run_dir / "reviews"
     return RunLayout(
         run_dir=run_dir,
-        input_dir=run_dir / "00-input",
-        analysis_dir=run_dir / "01-analysis",
-        working_dir=run_dir / "02-working",
-        history_dir=run_dir / "03-history",
-        reviews_dir=run_dir / "04-reviews",
-        final_dir=run_dir / "05-final",
+        reviews_dir=reviews_dir,
+        manifest_path=run_dir / "manifest.json",
+        session_state_path=run_dir / "session-state.json",
+        event_log_path=run_dir / "event-log.jsonl",
     )
 
 
@@ -65,85 +63,162 @@ def write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def write_json(path: Path, payload: object) -> None:
+    """Persist a JSON document with stable formatting."""
+
+    write_text(path, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+
+
+def append_jsonl(path: Path, payload: object) -> None:
+    """Append one JSON object to a JSONL log."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def build_session_state(
+    task: str,
+    created_at: datetime,
+    workspace_root: Path,
+    run_dir: Path,
+    base_branch: str | None,
+    entry_mode: str,
+) -> dict[str, object]:
+    """Build the initial mutable session state."""
+
+    timestamp = created_at.isoformat(timespec="seconds")
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "metadata": {
+            "created_at": timestamp,
+            "workspace_root": str(workspace_root),
+            "run_dir": str(run_dir),
+            "entry_mode_requested": entry_mode,
+            "base_branch": base_branch,
+            "current_phase": "initialized",
+            "last_updated_at": timestamp,
+        },
+        "input": {
+            "task": task.strip(),
+            "raw_findings": [],
+            "scope_and_constraints": [],
+            "project_context": [],
+            "review_scope": {
+                "worktree_status": "unknown",
+                "first_review_basis": "unknown",
+                "notes": [],
+            },
+        },
+        "analysis": {
+            "findings_analysis": [],
+            "behavior_deltas": [],
+            "fix_strategy": [],
+        },
+        "working_state": {
+            "current_status": [
+                "Run initialized.",
+                "Review mode not resolved yet.",
+            ],
+            "implementation_plan": [],
+            "changed_surface": [],
+            "latest_verification_summary": {
+                "inspections": [],
+                "quality_checks": [],
+                "tests": [],
+            },
+        },
+        "confirmed_business_decisions": [],
+        "open_questions": [],
+        "final_result": {
+            "status": "in_progress",
+            "merge_ready": False,
+            "resolved_findings": [],
+            "remaining_findings": [],
+            "residual_risk": [],
+            "verification_summary": {
+                "inspections": [],
+                "quality_checks": [],
+                "tests": [],
+            },
+        },
+    }
+
+
+def build_iteration_payload(iteration: int) -> dict[str, object]:
+    """Build the initial JSON skeleton for one review pass."""
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "iteration": iteration,
+        "mode": None,
+        "basis": {
+            "review_surface": None,
+            "base_branch": None,
+            "notes": [],
+        },
+        "in_scope": [],
+        "fixes_applied": [],
+        "verification": {
+            "inspections": [],
+            "quality_checks": [],
+            "tests": [],
+        },
+        "subagent": {
+            "reviewer_skill": None,
+            "prompt_summary": "",
+            "raw_response": "",
+        },
+        "normalized_review": {
+            "remaining_issues": [],
+            "regression_risks": [],
+            "questions_for_user": [],
+            "next_fix_batch": [],
+        },
+        "user_answers": [],
+        "exit_decision": {
+            "decision": "pending",
+            "reason": "",
+        },
+    }
+
+
 def create_initial_files(
     layout: RunLayout,
     task: str,
     created_at: datetime,
+    workspace_root: Path,
     base_branch: str | None,
     entry_mode: str,
 ) -> None:
     """Create the baseline artifact files for a new run."""
 
-    for directory in (
-        layout.input_dir,
-        layout.analysis_dir,
-        layout.working_dir,
-        layout.history_dir,
-        layout.reviews_dir,
-        layout.final_dir,
-    ):
-        directory.mkdir(parents=True, exist_ok=True)
+    layout.reviews_dir.mkdir(parents=True, exist_ok=True)
 
-    write_text(layout.input_dir / "task.md", f"# Task\n\n{task.strip()}\n")
-    write_text(layout.input_dir / "review-findings.md", "# Review Findings\n\n- Paste raw review findings here.\n")
-    write_text(layout.input_dir / "scope-and-constraints.md", "# Scope and Constraints\n\n- Record confirmed boundaries here.\n")
-    write_text(
-        layout.input_dir / "review-scope.md",
-        (
-            "# Review Scope\n\n"
-            f"- Requested entry mode: `{entry_mode}`\n"
-            f"- Base branch: `{base_branch or 'not-set'}`\n"
-            "- Worktree status: record clean or dirty state here.\n"
-            "- First review basis: record whether pass 1 is `initial-diff-review` or `re-review-after-fixes`.\n"
-            "- Notes: record how the review surface was chosen.\n"
-        ),
+    session_state = build_session_state(
+        task=task,
+        created_at=created_at,
+        workspace_root=workspace_root,
+        run_dir=layout.run_dir,
+        base_branch=base_branch,
+        entry_mode=entry_mode,
     )
-    write_text(layout.input_dir / "project-context.md", "# Project Context\n\n- Record relevant local rules and code context here.\n")
-
-    write_text(layout.analysis_dir / "findings-analysis.md", "# Findings Analysis\n\n- Record which findings are confirmed and why.\n")
-    write_text(layout.analysis_dir / "fix-strategy.md", "# Fix Strategy\n\n- Describe the intended fix sequence and risk order.\n")
-    write_text(layout.analysis_dir / "questions-for-user.md", "# Questions for User\n\n- Record business questions that block confident fixes.\n")
-
-    write_text(layout.working_dir / "implementation-plan.md", "# Implementation Plan\n\n- Track the current fix batch here.\n")
-    write_text(layout.working_dir / "current-status.md", "# Current Status\n\n- Keep the latest working status here.\n")
-    write_text(layout.working_dir / "changed-surface.md", "# Changed Surface\n\n- Record files, modules, and behaviors touched by fixes.\n")
-
-    write_text(
-        layout.history_dir / "conversation-log.md",
-        (
-            "# Conversation Log\n\n"
-            f"- {created_at.isoformat(timespec='seconds')}: Run created.\n"
-            "- Append user questions, agent questions, and user answers chronologically.\n"
-        ),
-    )
-    write_text(layout.history_dir / "decision-log.md", "# Decision Log\n\n- Record only decisions confirmed by the user.\n")
-    write_text(layout.history_dir / "change-log.md", "# Change Log\n\n- Record why each fix iteration changed the solution.\n")
+    write_json(layout.session_state_path, session_state)
 
     for iteration in range(1, 4):
-        iteration_dir = layout.reviews_dir / f"iteration-{iteration}"
-        iteration_dir.mkdir(parents=True, exist_ok=True)
-        write_text(
-            iteration_dir / "README.md",
-            (
-                f"# Iteration {iteration}\n\n"
-                "- Store the fix scope, code changes, verification, subagent review, "
-                "questions for the user, answers received, and exit decision for this pass.\n"
-            ),
-        )
-        write_text(iteration_dir / "review-basis.md", f"# Review Basis {iteration}\n\n")
-        write_text(iteration_dir / "findings-in-scope.md", f"# Findings In Scope {iteration}\n\n")
-        write_text(iteration_dir / "fixes-applied.md", f"# Fixes Applied {iteration}\n\n")
-        write_text(iteration_dir / "verification.md", f"# Verification {iteration}\n\n")
-        write_text(iteration_dir / "subagent-review-prompt.md", f"# Subagent Review Prompt {iteration}\n\n")
-        write_text(iteration_dir / "subagent-review.md", f"# Subagent Review {iteration}\n\n")
-        write_text(iteration_dir / "questions-for-user.md", f"# Questions for User {iteration}\n\n")
-        write_text(iteration_dir / "user-answers.md", f"# User Answers {iteration}\n\n")
-        write_text(iteration_dir / "exit-decision.md", f"# Exit Decision {iteration}\n\n")
+        write_json(layout.reviews_dir / f"iteration-{iteration}.json", build_iteration_payload(iteration))
 
-    write_text(layout.final_dir / "resolved-findings.md", "# Resolved Findings\n\n- List findings closed by the final solution.\n")
-    write_text(layout.final_dir / "remaining-findings.md", "# Remaining Findings\n\n- List unresolved or deferred findings.\n")
-    write_text(layout.final_dir / "final-summary.md", "# Final Summary\n\n- Explain what changed and why it is enough.\n")
-    write_text(layout.final_dir / "verification-summary.md", "# Verification Summary\n\n- Summarize quality checks and remaining risk.\n")
+    append_jsonl(
+        layout.event_log_path,
+        {
+            "timestamp": created_at.isoformat(timespec="seconds"),
+            "type": "run-created",
+            "details": {
+                "entry_mode_requested": entry_mode,
+                "base_branch": base_branch,
+            },
+        },
+    )
 
 
 def write_manifest(
@@ -157,6 +232,7 @@ def write_manifest(
     """Persist machine-readable metadata for the run."""
 
     manifest = {
+        "schema_version": SCHEMA_VERSION,
         "created_at": created_at.isoformat(timespec="seconds"),
         "workspace_root": str(workspace_root),
         "run_dir": str(layout.run_dir),
@@ -164,15 +240,16 @@ def write_manifest(
         "entry_mode_requested": entry_mode,
         "base_branch": base_branch,
         "paths": {
-            "input": str(layout.input_dir),
-            "analysis": str(layout.analysis_dir),
-            "working": str(layout.working_dir),
-            "history": str(layout.history_dir),
-            "reviews": str(layout.reviews_dir),
-            "final": str(layout.final_dir),
+            "session_state": str(layout.session_state_path),
+            "event_log": str(layout.event_log_path),
+            "reviews_dir": str(layout.reviews_dir),
+            "reviews": {
+                f"iteration_{iteration}": str(layout.reviews_dir / f"iteration-{iteration}.json")
+                for iteration in range(1, 4)
+            },
         },
     }
-    write_text(layout.run_dir / "manifest.json", json.dumps(manifest, indent=2, ensure_ascii=True) + "\n")
+    write_json(layout.manifest_path, manifest)
 
 
 def main() -> None:
@@ -200,6 +277,7 @@ def main() -> None:
         layout=layout,
         task=args.task,
         created_at=created_at,
+        workspace_root=workspace_root,
         base_branch=args.base_branch,
         entry_mode=args.entry_mode,
     )
