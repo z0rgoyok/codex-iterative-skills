@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -35,7 +36,17 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as stream:
+        stream.write(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+        temp_path = Path(stream.name)
+    temp_path.replace(path)
 
 
 def append_jsonl(path: Path, payload: object) -> None:
@@ -65,14 +76,19 @@ def load_checkpoint(path: Path) -> dict[str, Any]:
     return payload
 
 
-def read_raw_response(raw_response_file: Path | None) -> str:
+def read_raw_response(raw_response_file: Path | None, existing_raw_response: str = "") -> str:
     if raw_response_file is not None:
         return read_text(raw_response_file).strip()
 
     if not sys.stdin.isatty():
-        return sys.stdin.read().strip()
+        stdin_payload = sys.stdin.read().strip()
+        if stdin_payload:
+            return stdin_payload
 
-    raise ValueError("raw response must be provided via --raw-response-file or stdin")
+    if existing_raw_response.strip():
+        return existing_raw_response.strip()
+
+    raise ValueError("raw response must be provided via --raw-response-file, stdin, or existing review JSON")
 
 
 def extract_json_summary(raw_response: str) -> dict[str, Any] | None:
@@ -266,6 +282,7 @@ def persist_review_pass(paths: Paths, checkpoint: dict[str, Any], raw_response: 
     manifest = read_json(paths.manifest)
     session_state = read_json(paths.session_state)
     review_payload = read_json(paths.review_file)
+    existing_subagent = review_payload.get("subagent", {})
 
     normalized_review = normalize_review_summary(raw_response)
     timestamp = now_iso()
@@ -300,9 +317,20 @@ def persist_review_pass(paths: Paths, checkpoint: dict[str, Any], raw_response: 
             },
             "plan_before": str(checkpoint.get("plan_before", "")).strip(),
             "subagent": {
-                "reviewer_role": checkpoint.get("subagent", {}).get("reviewer_role", "plan-critic"),
-                "reviewer_model": checkpoint.get("subagent", {}).get("reviewer_model"),
-                "prompt_summary": str(checkpoint.get("subagent", {}).get("prompt_summary", "")).strip(),
+                "reviewer_role": checkpoint.get("subagent", {}).get(
+                    "reviewer_role",
+                    existing_subagent.get("reviewer_role", "plan-critic"),
+                ),
+                "reviewer_model": checkpoint.get("subagent", {}).get(
+                    "reviewer_model",
+                    existing_subagent.get("reviewer_model"),
+                ),
+                "prompt_summary": str(
+                    checkpoint.get("subagent", {}).get(
+                        "prompt_summary",
+                        existing_subagent.get("prompt_summary", ""),
+                    )
+                ).strip(),
                 "raw_response": raw_response,
             },
             "normalized_review": normalized_review,
@@ -418,6 +446,13 @@ def persist_review_pass(paths: Paths, checkpoint: dict[str, Any], raw_response: 
         )
 
 
+def load_existing_raw_response(review_file: Path) -> str:
+    if not review_file.exists():
+        return ""
+    payload = read_json(review_file)
+    return str(payload.get("subagent", {}).get("raw_response", "")).strip()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True, help="Path to one plan-review run directory.")
@@ -427,10 +462,11 @@ def main() -> None:
 
     run_dir = Path(args.run_dir).expanduser().resolve()
     checkpoint = load_checkpoint(Path(args.checkpoint_file).expanduser().resolve())
-    raw_response = read_raw_response(
-        Path(args.raw_response_file).expanduser().resolve() if args.raw_response_file else None
-    )
     paths = load_paths(run_dir=run_dir, iteration=int(checkpoint["iteration"]))
+    raw_response = read_raw_response(
+        Path(args.raw_response_file).expanduser().resolve() if args.raw_response_file else None,
+        existing_raw_response=load_existing_raw_response(paths.review_file),
+    )
 
     persist_review_pass(paths=paths, checkpoint=checkpoint, raw_response=raw_response)
     print(str(paths.review_file))

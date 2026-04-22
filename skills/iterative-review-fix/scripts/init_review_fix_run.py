@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import re
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -60,7 +61,17 @@ def write_text(path: Path, content: str) -> None:
     """Write UTF-8 text to disk, creating parent directories as needed."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as stream:
+        stream.write(content)
+        temp_path = Path(stream.name)
+    temp_path.replace(path)
 
 
 def write_json(path: Path, payload: object) -> None:

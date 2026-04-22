@@ -18,6 +18,11 @@ description: Строить рабочий план по задаче польз
 
 След работы хранить в компактном JSON-first формате. Источник истины должен читаться и моделью, и автоматикой без дополнительного парсинга россыпи Markdown-файлов.
 
+Делить владение артефактами явно:
+
+- субагент владеет reviewer trace (следом ревью): своим сырым ответом и нормализованным review summary (итогом ревью);
+- вызывающий агент владеет orchestration state (состоянием оркестрации): user answers (ответами пользователя), plan_after, change_summary, exit_decision и final_result.
+
 ## Artifact Workspace
 
 Создавать отдельную директорию под каждый прогон навыка.
@@ -78,12 +83,13 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/iterative-plan-review/scripts/init_p
 - Требовать от субагента проводить ревью самостоятельно, без каскадной делегации и без запуска дочерних субагентов любым способом.
 
 5. Сохранять результат review pass до новых изменений плана.
-- Сразу после `wait_agent` сохранить raw response (сырой ответ) субагента в `reviews/iteration-N.json`.
-- В этом же checkpoint (контрольной точке) нормализовать critical gaps (критические пробелы), improvement suggestions (предложения по улучшению), questions for user (вопросы пользователю), revised plan (обновлённый план) и plan quality signals (сигналы качества плана).
-- Для записи checkpoint использовать скрипт `scripts/persist_plan_review_pass.py`, а не ручное переписывание JSON.
-- Добавить событие в `event-log.jsonl`.
+- Перед запуском субагента подготовить `reviews/iteration-N.json` как skeleton (скелет) прохода и передать субагенту `run_dir`, `iteration` и `prompt_summary`.
+- Внутри своей сессии субагент обязан первым владельцем записать reviewer trace прямо в `reviews/iteration-N.json` через `scripts/persist_plan_review_subagent_handoff.py`.
+- После `wait_agent` вызывающий агент обязан проверить, что handoff (передача) субагента существует.
+- Если handoff уже записан, вызывающий агент завершает тот же `reviews/iteration-N.json` через `scripts/persist_plan_review_pass.py` без дублирования reviewer content.
+- Если handoff отсутствует, вызывающий агент восстанавливает проход fallback-путём: сохраняет raw response (сырой ответ) сам и вызывает `scripts/persist_plan_review_pass.py` с `--raw-response-file`.
 - Только после записи этих данных разрешены новые правки плана, вопросы пользователю и следующий pass.
-- Если этот checkpoint не записан, iteration (итерация) считается незавершённой даже при наличии ответа субагента в UI.
+- Если reviewer trace и итоговый checkpoint не зафиксированы в артефактах, iteration (итерация) считается незавершённой даже при наличии ответа субагента в UI.
 
 6. После каждой итерации перерабатывать план.
 - Разделять замечания субагента на:
@@ -107,7 +113,7 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/iterative-plan-review/scripts/init_p
 
 1. Зафиксировать текущую версию плана.
 2. Запустить свежего субагента для критического ревью.
-3. Сразу после ответа субагента записать `reviews/iteration-N.json` через `scripts/persist_plan_review_pass.py`.
+3. Сразу после ответа субагента убедиться, что reviewer trace попал в `reviews/iteration-N.json`, затем завершить тот же файл через `scripts/persist_plan_review_pass.py`.
 4. Разобрать замечания.
 5. Поднять бизнес-вопросы пользователю, если они появились.
 6. Обновить план.
@@ -174,6 +180,30 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/iterative-plan-review/scripts/init_p
 
 ## Persist Script Contract
 
+### Subagent Handoff
+
+Субагент пишет свою часть review pass (прохода ревью) сам:
+
+```bash
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/iterative-plan-review/scripts/persist_plan_review_subagent_handoff.py" \
+  --run-dir <RUN_DIR> \
+  --iteration <ITERATION> \
+  --reviewer-role plan-critic \
+  --reviewer-model gpt-5.4 \
+  --prompt-summary "<PROMPT_SUMMARY>" \
+  --raw-response-file <RAW_RESPONSE_FILE>
+```
+
+Этот шаг заполняет в `reviews/iteration-N.json`:
+
+- `subagent.raw_response`;
+- `subagent.reviewer_role`;
+- `subagent.reviewer_model`;
+- `subagent.prompt_summary`;
+- `normalized_review`.
+
+### Caller Finalization
+
 Сразу после ответа субагента вызывать:
 
 ```bash
@@ -182,6 +212,8 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/iterative-plan-review/scripts/persis
   --checkpoint-file <CHECKPOINT_JSON> \
   --raw-response-file <RAW_RESPONSE_FILE>
 ```
+
+Если subagent handoff уже записан, `--raw-response-file` можно опустить: `persist_plan_review_pass.py` возьмёт существующий `subagent.raw_response` из `reviews/iteration-N.json`.
 
 `checkpoint-file` должен содержать минимум:
 
@@ -306,6 +338,7 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/iterative-plan-review/scripts/persis
 1. Найди пропущенные шаги, слабые места, плохой порядок и скрытые зависимости.
 2. Отдельно выдели вопросы, которые меняют бизнес-решение и требуют ответа пользователя.
 3. Предложи улучшенную версию плана без самостоятельного выбора бизнес-варианта.
+4. До возврата ответа вызывающему агенту запиши reviewer trace через `persist_plan_review_subagent_handoff.py`, если тебе передали `run_dir` и `iteration`.
 
 Формат ответа:
 - Короткий human summary
@@ -355,6 +388,7 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/iterative-plan-review/scripts/persis
 - Держать `event-log.jsonl` append-only журналом.
 - Хранить каждый review pass в одном `reviews/iteration-N.json`.
 - После `wait_agent` всегда вызывать `scripts/persist_plan_review_pass.py` до новых правок плана.
+- Требовать от субагента сначала записать reviewer trace в тот же `reviews/iteration-N.json`, а уже затем возвращать ответ вызывающему агенту.
 - Задавать вопросы по ходу работы, а не копить их до самого конца.
 - Проводить от одного до трёх независимых проходов ревью разными свежими субагентами.
 - Субагент, запущенный в рамках этого skill, проводит ревью сам и не запускает других субагентов никаким способом.

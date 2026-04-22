@@ -60,7 +60,20 @@ This layout solves two operating problems:
 
 ## Required checkpoint
 
-After `wait_agent` returns, the caller must persist the current pass into `reviews/iteration-N.json` before any new plan edits, extra questioning, or another review pass.
+The same `reviews/iteration-N.json` is filled in two ownership phases:
+
+1. The subagent records reviewer trace first:
+  - raw response;
+  - normalized review summary;
+  - reviewer metadata.
+2. The caller records orchestration state after `wait_agent`:
+  - user answers;
+  - plan_after;
+  - change summary;
+  - exit decision;
+  - finalization.
+
+After `wait_agent` returns, the caller must ensure that `reviews/iteration-N.json` already contains reviewer trace, and then finalize the same file before any new plan edits, extra questioning, or another review pass.
 
 If this checkpoint is missing, the run is incomplete even when the UI already shows the subagent response.
 
@@ -155,4 +168,6 @@ One JSON object per line:
 - Replace `session-state.json` when the current plan state changes.
 - Replace `reviews/iteration-N.json` while the pass is in progress, then freeze it once the exit decision is recorded.
 - Do not spread one review pass across multiple files.
-- Persist each pass through `scripts/persist_plan_review_pass.py`, so the raw subagent response and normalized JSON summary are written consistently.
+- Let the subagent persist reviewer trace through `scripts/persist_plan_review_subagent_handoff.py`.
+- Let the caller finalize the same pass through `scripts/persist_plan_review_pass.py`.
+- If subagent handoff is missing, let the caller reconstruct the pass through `scripts/persist_plan_review_pass.py` with `--raw-response-file`.
