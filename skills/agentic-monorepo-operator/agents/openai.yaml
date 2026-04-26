@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agentic Monorepo Operator"
+  short_description: "Operate monorepos with project and quality skills."
+  default_prompt: "Use agentic monorepo operating rules for this task."

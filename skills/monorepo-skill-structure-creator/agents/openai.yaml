@@ -1,0 +1,4 @@
+interface:
+  display_name: "Monorepo Skill Structure Creator"
+  short_description: "Create repo-local project and quality skills for monorepos."
+  default_prompt: "Create or update repo-local skills for this monorepo."

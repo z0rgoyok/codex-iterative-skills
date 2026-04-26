@@ -11,6 +11,8 @@ DEFAULT_SKILLS=(
   "iterative-plan-review"
   "iterative-review-fix"
   "final-gate-review"
+  "monorepo-skill-structure-creator"
+  "agentic-monorepo-operator"
 )
 
 print_usage() {

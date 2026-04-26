@@ -1,14 +1,16 @@
 # Codex Iterative Skills
 
-Этот репозиторий упаковывает три навыка для управляемой работы через итерации и финальное ревью.
+Этот репозиторий упаковывает навыки для управляемой работы через итерации, финальное ревью и агентно-ориентированные монорепы.
 
 Что здесь лежит:
 
 - `iterative-plan-review` строит рабочий план по задаче, прогоняет его через до трёх независимых проходов критического ревью и поднимает пользователю только бизнес-развилки.
 - `iterative-review-fix` закрывает цикл `review -> fix -> re-review`, сохраняет компактный машинно-парсерный след артефактов, опционально использует `$final-gate-review` внутри review-субагента и поднимает пользователю только решения, которые меняют бизнес-смысл.
 - `final-gate-review` даёт отдельный жёсткий финальный quality gate (контроль качества) для staged change set (подготовленного набора изменений), ищет long impact (долгий эффект), архитектурные риски и пропущенные сценарии и возвращает результат прямо в ответе без отдельного файла в репозитории.
+- `monorepo-skill-structure-creator` создаёт структуру `.agents/skills/project-name-skills-*`, обновляет root `AGENTS.md` как router (маршрутизатор) контекста и фиксирует обязательные quality skills (навыки контроля качества) для подпроектов монорепы.
+- `agentic-monorepo-operator` описывает работу агента в таких монорепах: выбор project/context skills (проектных/контекстных навыков), quality skills, границы React/Next.js, KMM, Android, React Native и backend.
 
-Оба навыка сохраняют историю работы и артефакты так, чтобы результат можно было восстановить, проверить и продолжить. Для `iterative-plan-review` и `iterative-review-fix` рабочий след теперь хранится в JSON-first формате.
+Итеративные навыки сохраняют историю работы и артефакты так, чтобы результат можно было восстановить, проверить и продолжить. Для `iterative-plan-review` и `iterative-review-fix` рабочий след теперь хранится в JSON-first формате.
 
 ## Repository Layout
 
@@ -28,6 +30,12 @@ skills/
     scripts/persist_review_pass.py
   final-gate-review/
     SKILL.md
+  monorepo-skill-structure-creator/
+    SKILL.md
+    agents/openai.yaml
+  agentic-monorepo-operator/
+    SKILL.md
+    agents/openai.yaml
 ```
 
 ## Why These Skills Exist
@@ -56,6 +64,8 @@ mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
 cp -R skills/iterative-plan-review "${CODEX_HOME:-$HOME/.codex}/skills/"
 cp -R skills/iterative-review-fix "${CODEX_HOME:-$HOME/.codex}/skills/"
 cp -R skills/final-gate-review "${CODEX_HOME:-$HOME/.codex}/skills/"
+cp -R skills/monorepo-skill-structure-creator "${CODEX_HOME:-$HOME/.codex}/skills/"
+cp -R skills/agentic-monorepo-operator "${CODEX_HOME:-$HOME/.codex}/skills/"
 ```
 
 Для воспроизводимой синхронизации используй проектный скрипт:
@@ -87,8 +97,10 @@ scripts/sync-skills.sh install all iterative-plan-review iterative-review-fix
 - `Use $iterative-plan-review to turn this task into a working plan and review it up to three times.`
 - `Use $iterative-review-fix to close these review findings and keep the full artifact trail.`
 - `Use $final-gate-review to perform a final principal-level review of the staged change set.`
+- `Use $monorepo-skill-structure-creator to create repo-local project and quality skills for this monorepo.`
+- `Use $agentic-monorepo-operator while working across this React/KMM/backend monorepo.`
 
-Оба навыка уже включают:
+Итеративные навыки уже включают:
 
 - шаблон артефактной структуры;
 - скрипт инициализации рабочего прогона;
