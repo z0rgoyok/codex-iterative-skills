@@ -7,6 +7,7 @@
 - `iterative-plan-review` строит рабочий план по задаче, прогоняет его через до трёх независимых проходов критического ревью и поднимает пользователю только бизнес-развилки.
 - `iterative-review-fix` закрывает цикл `review -> fix -> re-review`, сохраняет компактный машинно-парсерный след артефактов, опционально использует `$final-gate-review` внутри review-субагента и поднимает пользователю только решения, которые меняют бизнес-смысл.
 - `final-gate-review` даёт отдельный жёсткий финальный quality gate (контроль качества) для staged change set (подготовленного набора изменений), ищет long impact (долгий эффект), архитектурные риски и пропущенные сценарии и возвращает результат прямо в ответе без отдельного файла в репозитории.
+- `epic-coordinator` координирует программный эпик от первичного разбора до ревью: Linear, workstreams (потоки работ), агенты, epic branch, PR, проверки, статусы и остаточные риски.
 - `monorepo-skill-structure-creator` создаёт структуру `.agents/skills/project-name-skills-*`, обновляет root `AGENTS.md` как router (маршрутизатор) контекста и фиксирует обязательные quality skills (навыки контроля качества) для подпроектов монорепы.
 - `agentic-monorepo-operator` описывает работу агента в таких монорепах: выбор project/context skills (проектных/контекстных навыков), quality skills, границы React/Next.js, KMM, Android, React Native и backend.
 
@@ -30,6 +31,9 @@ skills/
     scripts/persist_review_pass.py
   final-gate-review/
     SKILL.md
+  epic-coordinator/
+    SKILL.md
+    agents/openai.yaml
   monorepo-skill-structure-creator/
     SKILL.md
     agents/openai.yaml
@@ -64,6 +68,7 @@ mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
 cp -R skills/iterative-plan-review "${CODEX_HOME:-$HOME/.codex}/skills/"
 cp -R skills/iterative-review-fix "${CODEX_HOME:-$HOME/.codex}/skills/"
 cp -R skills/final-gate-review "${CODEX_HOME:-$HOME/.codex}/skills/"
+cp -R skills/epic-coordinator "${CODEX_HOME:-$HOME/.codex}/skills/"
 cp -R skills/monorepo-skill-structure-creator "${CODEX_HOME:-$HOME/.codex}/skills/"
 cp -R skills/agentic-monorepo-operator "${CODEX_HOME:-$HOME/.codex}/skills/"
 ```
@@ -97,6 +102,7 @@ scripts/sync-skills.sh install all iterative-plan-review iterative-review-fix
 - `Use $iterative-plan-review to turn this task into a working plan and review it up to three times.`
 - `Use $iterative-review-fix to close these review findings and keep the full artifact trail.`
 - `Use $final-gate-review to perform a final principal-level review of the staged change set.`
+- `Use $epic-coordinator to coordinate this Linear epic through implementation, review, PR and status updates.`
 - `Use $monorepo-skill-structure-creator to create repo-local project and quality skills for this monorepo.`
 - `Use $agentic-monorepo-operator while working across this React/KMM/backend monorepo.`
 

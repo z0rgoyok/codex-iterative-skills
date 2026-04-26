@@ -11,6 +11,7 @@ DEFAULT_SKILLS=(
   "iterative-plan-review"
   "iterative-review-fix"
   "final-gate-review"
+  "epic-coordinator"
   "monorepo-skill-structure-creator"
   "agentic-monorepo-operator"
 )
